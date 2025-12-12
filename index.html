@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verkaufsmesse – Designer-Ledercouch</title>
+
+  <style>
+    :root {
+      --bg: #f7f7f8; --fg: #222; --muted: #6b7280; --card: #fff;
+      --accent: #e5e7eb; --btn: #1f2937; --btn-fg: #fff;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:0; background:var(--bg); color:var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .wrap { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .card { background:var(--card); border:1px solid var(--accent); border-radius:16px; padding:24px;
+      box-shadow:0 2px 12px rgba(0,0,0,.04); }
+    h1{ font-size:1.6rem; margin:0 0 12px; }
+    h2{ font-size:1.2rem; margin:24px 0 12px; color:var(--muted); }
+    .muted{ color:var(--muted); }
+    table{ width:100%; border-collapse:collapse; }
+    th,td{ padding:8px 6px; border-bottom:1px solid var(--accent); text-align:left; }
+    input[type=number]{ width:100%; padding:12px; border:1px solid var(--accent);
+      border-radius:10px; font-size:1rem; background:#fbfbfb; }
+    button{ appearance:none; border:none; background:var(--btn); color:var(--btn-fg);
+      padding:12px 16px; border-radius:12px; cursor:pointer; font-weight:600; }
+    button.ghost{ background:transparent; color:var(--fg); border:1px solid var(--accent); }
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .consent{display:flex;gap:10px;align-items:flex-start;background:#f4f6f8;
+      border:1px solid var(--accent);border-radius:12px;padding:14px}
+    .grid{ display:grid; gap:12px; }
+    .row{ display:flex; gap:12px; align-items:center; }
+    @keyframes pulse{0%{opacity:.5}50%{opacity:1}100%{opacity:.5}}
+    .pulse{animation:pulse 1.3s ease-in-out infinite;opacity:.8}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div id="app">Lade …</div>
+  </div>
+
+  <!-- Spieler-ID & Studiencode -->
+  <script>
+    (function(){
+      const p = new URLSearchParams(location.search);
+
+      // Studien-ID aus URL
+      window.probandCode = p.get('code') || p.get('c') || 'UNKNOWN';
+
+      // Persistente Spieler-ID
+      let pid = localStorage.getItem('playerId');
+      if (!pid) {
+        pid = crypto.randomUUID?.() || ('p_'+Date.now()+Math.random().toString(36).substring(2));
+        localStorage.setItem('playerId', pid);
+      }
+      window.playerId = pid;
+    })();
+  </script>
+
+  <!-- Logging zu Google Sheets -->
+  <script>
+    const APP_URL = "https://script.google.com/macros/s/AKfycbzYOkxxvkuOhpzfLPkQcMfDRnCgDhM2iuB1q39KJSsl-ahU_HxOl5TJr2bbkkfCAxBLkQ/exec";
+
+    window.sendRow = function(row){
+      fetch(APP_URL, {
+        method: "POST",
+        body: new URLSearchParams({
+          participant_id: row.participant_id,
+          player_id: window.playerId,
+          proband_code: window.probandCode,
+
+          runde: row.runde ?? "",
+          algo_offer: row.algo_offer ?? "",
+          proband_counter: row.proband_counter ?? "",
+          accepted: row.accepted ? "1" : "0",
+          finished: row.finished ? "1" : "0",
+          deal_price: row.deal_price ?? ""
+        }),
+        mode: "no-cors"
+      }).catch(err => console.error("SEND ERROR →", err));
+    };
+  </script>
+
+  <!-- Verhandlungsskript -->
+  <script src="./app_Neu_Verhandlung_2.js"></script>
+</body>
+</html>
