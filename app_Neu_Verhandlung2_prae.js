@@ -25,7 +25,7 @@ CONFIG.MIN_PRICE = Number.isFinite(CONFIG.MIN_PRICE)
 
 
 /* ============================================================
-   HILFSFUNKTIONEN
+   HILFSFUNKTIONEN (alle Beträge → ganze Euro)
 ============================================================ */
 
 const roundEuro = n => Math.round(Number(n));
@@ -70,7 +70,7 @@ function nextDimension() {
 function newState() {
   const f = nextDimension();
 
-  // Basiswerte jetzt *mit Multiplikator f* (Basis aus URL konfigurierbar)
+  // Basiswerte mit Multiplikator f, auf ganze Euro gerundet
   const baseStart = roundEuro(CONFIG.INITIAL_OFFER * f);
   const baseMin   = roundEuro(CONFIG.MIN_PRICE * f);
 
@@ -184,12 +184,6 @@ function getWarning(userOffer) {
 
 /* ============================================================
    RISIKO-SYSTEM (Differenzmodell + Sofortabbruch <1500·f)
-   Chance basiert auf Differenz Verkäufer↔Käufer der aktuellen Runde:
-   5500 vs 2500 => 40%
-   Skalierung über state.scale
-
-   In den ersten 4 Runden erhöht ein sehr kleiner Schritt (<150€)
-   das Risiko zusätzlich und erzeugt eine Warnung.
 ============================================================ */
 
 function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
@@ -653,6 +647,20 @@ function viewFinish(accepted){
     </div>
 
     <button id="restartBtn">Neue Verhandlung</button>
+    <button id="surveyBtn"
+      style="
+        margin-top:8px;
+        display:inline-block;
+        padding:8px 14px;
+        border-radius:9999px;
+        border:1px solid #d1d5db;
+        background:#e5e7eb;
+        color:#374151;
+        font-size:0.95rem;
+        cursor:pointer;
+      ">
+      Zur Umfrage
+    </button>
 
     ${historyTable()}
   `;
@@ -661,6 +669,14 @@ function viewFinish(accepted){
     state = newState();
     viewVignette();
   };
+
+  const surveyBtn = document.getElementById('surveyBtn');
+  if (surveyBtn) {
+    surveyBtn.onclick = () => {
+      window.location.href =
+        'https://docs.google.com/forms/d/e/1FAIpQLSd2WAprvECsFLzU_erdGxM0bpaVk_bhm2fzxKgysXlafd8P6A/viewform?usp=publish-editor';
+    };
+  }
 }
 
 
