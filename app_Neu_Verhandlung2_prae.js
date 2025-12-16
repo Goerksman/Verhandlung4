@@ -44,23 +44,16 @@ const app = document.getElementById("app");
 
 
 /* ============================================================
-   DIMENSIONSSYSTEM
+   DIMENSIONSSYSTEM – reelle Faktoren 1–5 (zufällig)
 ============================================================ */
 
-const DIM_FACTORS = [1.0, 1.3, 1.5];
+// frühere Liste wird nicht mehr benutzt, bleibt nur als Referenz stehen
+const DIM_FACTORS = [1, 2, 3, 4, 5];
 let DIM_QUEUE = [];
 
-function shuffleDimensions() {
-  DIM_QUEUE = [...DIM_FACTORS];
-  for (let i = DIM_QUEUE.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [DIM_QUEUE[i], DIM_QUEUE[j]] = [DIM_QUEUE[j], DIM_QUEUE[i]];
-  }
-}
-
+// Multiplikator jetzt: echte Zufallszahl zwischen 1 und 5
 function nextDimension() {
-  if (DIM_QUEUE.length === 0) shuffleDimensions();
-  return DIM_QUEUE.pop();
+  return 1 + Math.random() * 4; // [1, 5)
 }
 
 
@@ -92,7 +85,7 @@ function newState() {
     finished: false,
 
     patternMessage: "",
-    last_abort_chance: null,  // für Anzeige
+    last_abort_chance: null,  // für Anzeige (nur Gesamtwert)
     warningRounds: 0          // wie viele Runden in Folge "kleine Schritte" erkannt werden
   };
 }
@@ -137,10 +130,11 @@ function shouldAutoAccept(_initialOffer, _minPrice, _prevOffer, counter) {
    Runde 2:  -250 * f
    Ab Runde 3: prozentuale Schritte in Richtung min_price,
                so dass in der letzten Runde min_price erreicht wird.
+   ignoreUserAccept = true → nur Schritt simulieren, kein Auto-Accept
 ============================================================ */
 
-function computeNextOffer(userOffer) {
-  if (shouldAccept(userOffer))
+function computeNextOffer(userOffer, ignoreUserAccept = false) {
+  if (!ignoreUserAccept && shouldAccept(userOffer))
     return roundEuro(userOffer);
 
   const f    = state.scale;
@@ -162,10 +156,6 @@ function computeNextOffer(userOffer) {
   } else {
     // Ab Runde 3 bis kurz vor der letzten Runde:
     // proportionaler Schritt vom aktuellen Angebot hin zur Schmerzgrenze.
-    //
-    // remainingSteps = Anzahl der "Angebotsrunden" inkl. dieser Runde
-    // bis zur letzten Angebotsrunde. So wird die Lücke
-    // curr → min über die verbleibenden Runden gleichmäßig abgebaut.
     const remainingSteps = state.max_runden - r + 1;
     const gap            = curr - min;
     const stepDown       = gap / remainingSteps;
@@ -179,46 +169,59 @@ function computeNextOffer(userOffer) {
 
 
 /* ============================================================
-   PATTERNERKENNUNG (kleine Schritte über mehrere Runden)
+   PATTERNERKENNUNG (keine / kleine Schritte pro Runde)
+   - relevant ab Angeboten ≥ 2250 * Multiplikator
+   - "kleiner Schritt": diff >= 0 und diff ≤ 100 * Multiplikator
+   - sobald diese Bedingung erfüllt ist:
+       * warningRounds++ (solange sie in Folge weiter erfüllt wird)
+       * patternMessage gesetzt
+   - bei größerem Schritt oder Rückschritt → reset
 ============================================================ */
 
-function updatePatternMessage() {
+function updatePatternMessage(currentBuyerOffer) {
   const f           = state.scale;
   const minRelevant = roundEuro(2250 * f);
+  const SMALL       = roundEuro(100 * f);
+  const buyer       = roundEuro(currentBuyerOffer);
 
-  const counters = state.history
-    .map(h => h.proband_counter)
-    .filter(v => v && v >= minRelevant);
+  const last = state.history[state.history.length - 1];
 
-  if (counters.length < 3) {
+  if (!last || last.proband_counter == null) {
+    state.warningRounds = 0;
     state.patternMessage = "";
     return;
   }
 
-  let chain = 1;
+  const lastBuyer = roundEuro(last.proband_counter);
 
-  for (let i = 1; i < counters.length; i++) {
-    const diff = counters[i] - counters[i - 1];
-    if (diff > 0 && diff <= roundEuro(100 * f)) chain++;
-    else chain = 1;
+  // nur wenn beide Angebote im relevanten Bereich liegen
+  if (buyer < minRelevant || lastBuyer < minRelevant) {
+    state.warningRounds = 0;
+    state.patternMessage = "";
+    return;
   }
 
-  if (chain >= 3)
+  const diff = buyer - lastBuyer;
+
+  // keine Veränderung oder kleine Erhöhung (≤ 100 * Multiplikator)
+  if (diff >= 0 && diff <= SMALL) {
+    state.warningRounds = (state.warningRounds || 0) + 1;
     state.patternMessage =
       "Mit derart kleinen Erhöhungen kommen wir eher unwahrscheinlich zu einer Einigung.";
-  else
+  } else {
+    // Muster bricht ab
+    state.warningRounds = 0;
     state.patternMessage = "";
+  }
 }
 
 
 /* ============================================================
    RISIKO-SYSTEM
-   - Differenzmodell mit Referenz 3000·f → 30 %
-   - Runde 1: kein Abbruch (außer < 1500·f), Risiko nur zur Anzeige
-   - Kleine Schritte (<100 €) in Runden 1–4:
-       * Runde, in der das Verhalten erkannt wird: +7 % Risiko
-       * zusätzlich +3 % pro weiterer Warnrunde, solange
-         dieses Verhalten anhält.
+   - Differenzmodell mit Referenz 3000·Multiplikator → 30 %
+   - Bei Angeboten < 1500·Multiplikator → Basisrisiko 100 %
+   - Zusätzlich +2 %-Punkte pro Warnrunde (warningRounds * 2)
+   - Abbruch erst ab Runde 4 (vorher nur Anzeige)
 ============================================================ */
 
 function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
@@ -228,7 +231,7 @@ function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
     roundEuro(sellerOffer) - roundEuro(buyerOffer)
   );
 
-  // Referenz: 3000 € → 30 % (skaliert mit f)
+  // Referenz: 3000 € * Multiplikator → 30 %
   const BASE_DIFF = 3000 * f;
 
   let chance = (diff / BASE_DIFF) * 30;
@@ -244,78 +247,26 @@ function maybeAbort(userOffer) {
   const seller = state.current_offer;
   const buyer  = roundEuro(userOffer);
 
-  // 1) Extrem-Lowball: unter 1500 * f → immer Abbruch (auch in Runde 1)
-  if (buyer < roundEuro(1500 * f)) {
-    state.last_abort_chance = 100;
-
-    logRound({
-      runde: state.runde,
-      algo_offer: seller,
-      proband_counter: buyer,
-      accepted: false,
-      finished: true,
-      deal_price: ""
-    });
-
-    state.history.push({
-      runde: state.runde,
-      algo_offer: seller,
-      proband_counter: buyer,
-      accepted: false
-    });
-
-    state.finished = true;
-    state.accepted = false;
-
-    viewAbort(100);
-    return true;
-  }
-
-  // 2) Runde 1: KEIN Abbruch (außer Extremfall oben),
-  //    Risiko nur zur Anzeige.
-  if (state.runde === 1) {
-    const baseChance = abortProbabilityFromLastDifference(seller, buyer);
-    state.last_abort_chance = baseChance;
-    state.warningRounds = 0;
-    return false;
-  }
-
-  // 3) Ab Runde 2: Basis-Risiko über Differenz
+  // Basis-Risiko aus Differenz
   let chance = abortProbabilityFromLastDifference(seller, buyer);
 
-  // 4) Kleine Schritte (<100 €) in den ersten 4 Runden:
-  //    - in der "Warnrunde": +7 %
-  //    - zusätzlich +3 % pro weiterer Warnrunde, solange das Muster anhält
-  if (state.runde <= 4) {
-    const last = state.history[state.history.length - 1];
-    if (last && last.proband_counter != null) {
-      const lastBuyer = roundEuro(last.proband_counter);
-      const stepUp    = buyer - lastBuyer;
-      const SMALL     = roundEuro(100 * f);
-
-      if (stepUp > 0 && stepUp < SMALL) {
-        // neue bzw. fortgesetzte Warnrunde
-        state.warningRounds = (state.warningRounds || 0) + 1;
-      } else {
-        // keine kleinen Schritte → Kette bricht ab
-        state.warningRounds = 0;
-      }
-    } else {
-      state.warningRounds = 0;
-    }
-  } else {
-    // ab Runde > 4 keine Zusatzstrafe für kleine Schritte mehr
-    state.warningRounds = 0;
+  // Extrem-Lowball: unter 1500 * Multiplikator → Basisrisiko 100 %
+  if (buyer < roundEuro(1500 * f)) {
+    chance = 100;
   }
 
+  // Zusatz 2 % pro Warnrunde, solange Warnung aktiv ist
   if (state.warningRounds > 0) {
-    // In der Runde, in der das Verhalten erkannt wird: +7 %
-    // plus zusätzlich +3 % pro weiterer Warnrunde
-    const extra = 7 + (state.warningRounds - 1) * 3;
-    chance = Math.min(chance + extra, 100);
+    chance = Math.min(100, chance + 2 * state.warningRounds);
   }
 
+  // Gesamt-Abbruchwahrscheinlichkeit für die Anzeige
   state.last_abort_chance = chance;
+
+  // Vor Runde 4: niemals abbrechen, nur die Wahrscheinlichkeit anzeigen
+  if (state.runde < 4) {
+    return false;
+  }
 
   const roll = randInt(1, 100);
 
@@ -450,6 +401,8 @@ function viewAbort(chance){
       <p class="muted">Abbruchwahrscheinlichkeit in dieser Runde: ${chance}%</p>
     </div>
 
+    <p><b>Du kannst nun entweder eine neue Runde spielen oder die Umfrage beantworten.</b></p>
+
     <button id="restartBtn">Neue Verhandlung</button>
     <button id="surveyBtn"
       style="
@@ -484,14 +437,20 @@ function viewAbort(chance){
 }
 
 function viewNegotiate(errorMsg){
-  const abortChance = (typeof state.last_abort_chance === "number")
-    ? state.last_abort_chance
-    : null;
+  const abortChance =
+    typeof state.last_abort_chance === "number"
+      ? state.last_abort_chance
+      : null;
 
-  let color = "#16a34a";
-  if (abortChance !== null){
-    if (abortChance > 50) color = "#ea580c";
-    else if (abortChance > 25) color = "#eab308";
+  // Farbskala nach Vorgabe:
+  // <20 %: grün, 20–40 %: orange, >40 %: rot
+  let color = "#16a34a"; // grün
+  if (abortChance !== null) {
+    if (abortChance > 40) {
+      color = "#dc2626"; // rot
+    } else if (abortChance >= 20) {
+      color = "#f97316"; // orange
+    }
   }
 
   app.innerHTML = `
@@ -573,7 +532,8 @@ function handleSubmit(raw){
     return viewNegotiate("Bitte eine gültige Zahl ≥ 0 eingeben.");
   }
 
-  const num = roundEuro(parsed);
+  const num       = roundEuro(parsed);
+  const prevOffer = state.current_offer;
 
   // keine niedrigeren Angebote als in der Vorrunde erlauben
   const last = state.history[state.history.length - 1];
@@ -586,9 +546,7 @@ function handleSubmit(raw){
     }
   }
 
-  const prevOffer = state.current_offer;
-
-  // Auto-Accept
+  // Standard-Auto-Accept
   if (shouldAutoAccept(state.initial_offer, state.min_price, prevOffer, num)){
     state.history.push({
       runde: state.runde,
@@ -613,10 +571,44 @@ function handleSubmit(raw){
     return viewThink(() => viewFinish(true));
   }
 
-  // Abbruch prüfen (setzt ggf. last_abort_chance / warningRounds)
+  // Zusätzliche Regel:
+  // Wenn das Angebot des Käufers mehr als 5 % unter dem letzten Angebot des Verkäufers liegt,
+  // aber mindestens so hoch ist wie der nächste Schritt des Verkäufers,
+  // soll der Verkäufer dieses Angebot akzeptieren.
+  const simulatedNext = computeNextOffer(num, true); // nächster Schritt ohne Auto-Accept
+  const diffRatio     = (prevOffer - num) / prevOffer;
+
+  if (diffRatio > 0.05 && num >= simulatedNext && num < prevOffer) {
+    state.history.push({
+      runde: state.runde,
+      algo_offer: prevOffer,
+      proband_counter: num,
+      accepted: true
+    });
+
+    logRound({
+      runde: state.runde,
+      algo_offer: prevOffer,
+      proband_counter: num,
+      accepted: true,
+      finished: true,
+      deal_price: num
+    });
+
+    state.accepted   = true;
+    state.finished   = true;
+    state.deal_price = num;
+
+    return viewThink(() => viewFinish(true));
+  }
+
+  // Warn-/Patternzustand mit dem aktuellen Angebot aktualisieren
+  updatePatternMessage(num);
+
+  // Abbruch prüfen (nutzt warningRounds, setzt last_abort_chance)
   if (maybeAbort(num)) return;
 
-  // normale Runde
+  // normale Runde: Verkäufer macht sein nächstes Angebot
   const next = computeNextOffer(num);
 
   logRound({
@@ -634,8 +626,6 @@ function handleSubmit(raw){
     proband_counter: num,
     accepted: false
   });
-
-  updatePatternMessage();
 
   state.current_offer = next;
 
@@ -659,7 +649,7 @@ function viewDecision(){
     <p class="muted">Teilnehmer-ID: ${state.participant_id}</p>
 
     <div class="card" style="padding:16px;border:1px dashed var(--accent);">
-      <strong>Letztes Angebot:</strong> ${eur(state.current_offer)}
+      <strong>Letztes Angebot:</strong> ${eur(state.current_offer)}</strong>
     </div>
 
     <button id="takeBtn">Annehmen</button>
@@ -712,6 +702,8 @@ function viewFinish(accepted){
       <strong>Ergebnis:</strong> ${text}</strong>
     </div>
 
+    <p><b>Du kannst nun entweder eine neue Runde spielen oder die Umfrage beantworten.</b></p>
+
     <button id="restartBtn">Neue Verhandlung</button>
     <button id="surveyBtn"
       style="
@@ -751,3 +743,4 @@ function viewFinish(accepted){
 ============================================================ */
 
 viewVignette();
+
