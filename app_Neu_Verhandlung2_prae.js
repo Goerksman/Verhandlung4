@@ -218,10 +218,10 @@ function updatePatternMessage(currentBuyerOffer) {
 
 /* ============================================================
    RISIKO-SYSTEM
-   - Differenzmodell mit Referenz 3000·Multiplikator → 30 %
+   - Differenzmodell mit Referenz 3000·Multiplikator → 25 %
    - Bei Angeboten < 1500·Multiplikator → Basisrisiko 100 %
    - Zusätzlich +2 %-Punkte pro Warnrunde (warningRounds * 2)
-   - Abbruch erst ab Runde 4 (vorher nur Anzeige)
+   - Abbruch erst ab Runde 3 (vorher nur Anzeige)
 ============================================================ */
 
 function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
@@ -231,10 +231,10 @@ function abortProbabilityFromLastDifference(sellerOffer, buyerOffer) {
     roundEuro(sellerOffer) - roundEuro(buyerOffer)
   );
 
-  // Referenz: 3000 € * Multiplikator → 30 %
+  // Referenz: 3000 € * Multiplikator → 25 %
   const BASE_DIFF = 3000 * f;
 
-  let chance = (diff / BASE_DIFF) * 30;
+  let chance = (diff / BASE_DIFF) * 25;  // vorher 30
 
   if (chance < 0)   chance = 0;
   if (chance > 100) chance = 100;
@@ -263,8 +263,8 @@ function maybeAbort(userOffer) {
   // Gesamt-Abbruchwahrscheinlichkeit für die Anzeige
   state.last_abort_chance = chance;
 
-  // Vor Runde 4: niemals abbrechen, nur die Wahrscheinlichkeit anzeigen
-  if (state.runde < 4) {
+  // Vor Runde 3: niemals abbrechen, nur die Wahrscheinlichkeit anzeigen
+  if (state.runde < 3) {
     return false;
   }
 
@@ -504,7 +504,7 @@ function viewNegotiate(errorMsg){
 
   app.innerHTML = `
     <h1>Verkaufsverhandlung</h1>
-    <p class="muted">Spieler-ID: ${window.playerId ?? "-"}</p>
+    <p class="muted">Spieler-ID: ${window.playerId ?? "-"} </p>
     <p class="muted">Teilnehmer-ID: ${state.participant_id}</p>
 
     <div class="grid">
