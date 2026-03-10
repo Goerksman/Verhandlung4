@@ -4,26 +4,18 @@
 const Q = new URLSearchParams(location.search);
 
 const CONFIG = {
-  INITIAL_OFFER: Q.has("i") ? Number(Q.get("i")) : 5518,  // Startangebot 5518
+  // Startangebot jetzt 5518, falls nicht per URL überschrieben
+  INITIAL_OFFER: Number(Q.get("i")) || 5518,
 
-  // optional direkt setzen (?min=3500). Wenn nicht gesetzt, wird per Faktor berechnet.
-  MIN_PRICE: Q.has("min") ? Number(Q.get("min")) : undefined,
-  MIN_PRICE_FACTOR: Number(Q.get("mf")) || 0.70,
+  // Schmerzgrenze fest auf 3500, optional per URL überschreibbar (?min=...)
+  MIN_PRICE: Q.has("min") ? Number(Q.get("min")) : 3500,
 
   // Zufällige Rundenzahl 8–12 (optional über rmin/rmax konfigurierbar)
   ROUNDS_MIN: parseInt(Q.get("rmin") || "8", 10),
   ROUNDS_MAX: parseInt(Q.get("rmax") || "12", 10),
 
   THINK_DELAY_MS_MIN: parseInt(Q.get("tmin") || "1200", 10),
-  THINK_DELAY_MS_MAX: parseInt(Q.get("tmax") || "2800", 10)
-};
-
-// Mindestpreis finalisieren (Fallback über Faktor)
-CONFIG.MIN_PRICE = Number.isFinite(CONFIG.MIN_PRICE)
-  ? CONFIG.MIN_PRICE
-  : Math.round(CONFIG.INITIAL_OFFER * CONFIG.MIN_PRICE_FACTOR);
-
-
+  THINK_DELAY_MS_MAX: parseInt(Q.get("tmax") || "2800", 10),
 /* ============================================================
    HILFSFUNKTIONEN (alle Beträge → ganze Euro)
 ============================================================ */
